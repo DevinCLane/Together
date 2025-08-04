@@ -42,6 +42,8 @@ jobs:
         id: deploy
         if: github.event.action != 'closed'
         uses: superfly/fly-pr-review-apps@1.3.0
+        with:
+          name: pr-${{ github.event.number }}-together-100devs
         env:
           DB_STRING: ${{ steps.setup-mongodb.outputs.connection-string }}
 
