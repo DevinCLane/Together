@@ -1,0 +1,60 @@
+name: Deploy Review App
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+env:
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+  FLY_REGION: iad
+  FLY_ORG: personal
+  MONGODB_ATLAS_PUBLIC_API_KEY: ${{ secrets.MONGODB_ATLAS_PUBLIC_API_KEY }}
+  MONGODB_ATLAS_PRIVATE_API_KEY: ${{ secrets.MONGODB_ATLAS_PRIVATE_API_KEY }}
+
+jobs:
+  review_app:
+    runs-on: ubuntu-latest
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+      mongodb_uri: ${{ steps.setup-mongodb.outputs.connection-string }}
+    concurrency:
+      group: pr-${{ github.event.number }}
+
+    environment:
+      name: pr-${{ github.event.number }}
+      url: ${{ steps.deploy.outputs.url }}
+
+    steps:
+      - name: Get code
+        uses: actions/checkout@v4
+
+      - name: Setup MongoDB Atlas
+        id: setup-mongodb
+        if: github.event.action != 'closed'
+        uses: mongodb/atlas-github-action@v0.2.0
+        with:
+          run-setup: true
+          create-project-name: review-app-pr-${{ github.event.number }}
+          cluster-name: review-pr-${{ github.event.number }}
+          username: ${{ secrets.MONGODB_USERNAME }}
+          password: ${{ secrets.MONGODB_PASSWORD }}
+
+      - name: Deploy PR app to Fly.io
+        id: deploy
+        if: github.event.action != 'closed'
+        uses: superfly/fly-pr-review-apps@1.3.0
+        env:
+          DB_STRING: ${{ steps.setup-mongodb.outputs.connection-string }}
+
+      - name: Cleanup MongoDB Atlas
+        if: github.event.action == 'closed'
+        uses: mongodb/atlas-github-action@v0.2.0
+        with:
+          delete-project-id: ${{ steps.setup-mongodb.outputs.create-project-id }}
+          delete-cluster-name: review-pr-${{ github.event.number }}
+
+      - name: Clean up GitHub environment
+        uses: strumwolf/delete-deployment-environment@v2
+        if: ${{ github.event.action == 'closed' }}
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          environment: pr-${{ github.event.number }}
